@@ -168,7 +168,7 @@
   /* KPI Cards */
   .kpi-grid {
     display: grid;
-    grid-template-columns: repeat(6, 1fr);
+    grid-template-columns: repeat(7, 1fr);
     gap: 12px;
     margin-bottom: 24px;
   }
@@ -201,7 +201,7 @@
   .kpi-card.card-ng { --card-accent: var(--accent-ng); background: linear-gradient(135deg, var(--surface), rgba(232,32,74,0.06)); }
   .kpi-card.card-okrate { --card-accent: var(--accent-ok); }
   .kpi-card.card-ngrate { --card-accent: var(--accent-ng); }
-  .kpi-card.card-flavors { --card-accent: var(--accent-yellow); }
+  .kpi-card.card-question { --card-accent: #9b59b6; background: linear-gradient(135deg, var(--surface), rgba(155,89,182,0.06)); }
 
   .kpi-label {
     font-family: 'Space Mono', monospace;
@@ -442,17 +442,7 @@
       <div class="header-title">DASH<span>BOARD</span></div>
     </div>
     <div class="header-right">
-      <div class="script-url-box">
-        <input 
-          type="text" 
-          class="url-input" 
-          id="scriptUrl" 
-          placeholder="วาง Apps Script URL ที่นี่..."
-          value=""
-        />
-        <button class="btn btn-primary" id="loadBtn" onclick="loadData()">LOAD</button>
-      </div>
-      <div class="last-update" id="lastUpdate">ยังไม่ได้โหลดข้อมูล</div>
+      <div class="last-update" id="lastUpdate">กำลังโหลด...</div>
     </div>
   </div>
 
@@ -489,6 +479,10 @@
       <div class="kpi-label">NG Rate</div>
       <div class="kpi-value ng" id="kpiNGRate">—<span class="kpi-unit">%</span></div>
       <div class="kpi-bar"><div class="kpi-bar-fill ng" id="kpiNGBar" style="width:0%"></div></div>
+    </div>
+    <div class="kpi-card card-question animate">
+      <div class="kpi-label">Code มี "?"</div>
+      <div class="kpi-value" style="color:#9b59b6" id="kpiQuestion">—</div>
     </div>
   </div>
 
@@ -564,6 +558,8 @@
 </div>
 
 <script>
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxrqNBcL_8AMlfOgrmWP75fK0zUDP7ntz8ahcyMzc06ZdajlG2-J-k6_yasSEqk6fN6XQ/exec';
+
 // Chart.js defaults
 Chart.defaults.color = '#7a80a0';
 Chart.defaults.borderColor = '#dde1ea';
@@ -579,14 +575,9 @@ function destroyChart(id) {
 
 // Load data from Apps Script
 async function loadData() {
-  const url = document.getElementById('scriptUrl').value.trim();
-  if (!url) {
-    setStatus('error', 'กรุณาใส่ Apps Script URL');
-    return;
-  }
+  const url = SCRIPT_URL;
 
   setStatus('loading', 'กำลังโหลด...');
-  document.getElementById('loadBtn').disabled = true;
 
   try {
     const res = await fetch(`${url}?action=getDashboard`);
@@ -601,7 +592,6 @@ async function loadData() {
   } catch (err) {
     setStatus('error', 'Error: ' + err.message);
   } finally {
-    document.getElementById('loadBtn').disabled = false;
   }
 }
 
@@ -624,6 +614,7 @@ function renderDashboard(data) {
   document.getElementById('kpiNGRate').innerHTML = summary.ngRate + '<span class="kpi-unit">%</span>';
   document.getElementById('kpiOKBar').style.width = summary.okRate + '%';
   document.getElementById('kpiNGBar').style.width = summary.ngRate + '%';
+  document.getElementById('kpiQuestion').textContent = (summary.totalQuestion || 0).toLocaleString();
 
   // Charts
   renderFlavorBar(flavorData);
@@ -828,16 +819,8 @@ function renderTable(flavorData) {
   `;
 }
 
-// Allow Enter key on URL input
-document.getElementById('scriptUrl').addEventListener('keydown', e => {
-  if (e.key === 'Enter') loadData();
-});
-
 // Auto-load on page open
-window.addEventListener('load', () => {
-  document.getElementById('scriptUrl').value = 'https://script.google.com/macros/s/AKfycbxrqNBcL_8AMlfOgrmWP75fK0zUDP7ntz8ahcyMzc06ZdajlG2-J-k6_yasSEqk6fN6XQ/exec';
-  loadData();
-});
+window.addEventListener('load', () => loadData());
 </script>
 </body>
 </html>

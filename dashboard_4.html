@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TLC Quality Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Noto+Sans+Thai:wght@300;400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --surface: #ffffff;
+    --surface2: #eef0f4;
+    --border: #dde1ea;
+    --accent-ok: #00a97a;
+    --accent-ng: #e8204a;
+    --accent-blue: #1a6fd4;
+    --accent-yellow: #c9860a;
+    --text: #1a1c2a;
+    --text-muted: #7a80a0;
+    --glow-ok: rgba(0,169,122,0.10);
+    --glow-ng: rgba(232,32,74,0.10);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Noto Sans Thai', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Noise texture overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.4;
+  }
+
+  .container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 24px;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 32px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .header-left { display: flex; flex-direction: column; gap: 4px; }
+
+  .header-tag {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: var(--accent-blue);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+
+  .header-title {
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: -1px;
+    color: var(--text);
+    line-height: 1;
+  }
+
+  .header-title span {
+    color: var(--accent-ok);
+  }
+
+  .header-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+  }
+
+  .script-url-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .url-input {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    width: 360px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .url-input:focus { border-color: var(--accent-blue); }
+  .url-input::placeholder { color: var(--text-muted); }
+
+  .btn {
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 8px 20px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    transition: all 0.2s;
+  }
+
+  .btn-primary {
+    background: var(--accent-ok);
+    color: #000;
+  }
+  .btn-primary:hover { background: #00ffc3; transform: translateY(-1px); }
+  .btn-primary:active { transform: translateY(0); }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  .last-update {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+
+  /* Status bar */
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 24px;
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--text-muted);
+  }
+
+  .status-dot.ok { background: var(--accent-ok); box-shadow: 0 0 6px var(--accent-ok); }
+  .status-dot.error { background: var(--accent-ng); }
+  .status-dot.loading { 
+    background: var(--accent-yellow);
+    animation: pulse 1s infinite;
+  }
+
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  /* KPI Cards */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  @media (max-width: 1200px) { .kpi-grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 768px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+
+  .kpi-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+
+  .kpi-card:hover { transform: translateY(-2px); border-color: #3a3a50; }
+
+  .kpi-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--card-accent, var(--border));
+  }
+
+  .kpi-card.card-total { --card-accent: var(--accent-blue); }
+  .kpi-card.card-ok { --card-accent: var(--accent-ok); background: linear-gradient(135deg, var(--surface), rgba(0,169,122,0.06)); }
+  .kpi-card.card-ng { --card-accent: var(--accent-ng); background: linear-gradient(135deg, var(--surface), rgba(232,32,74,0.06)); }
+  .kpi-card.card-okrate { --card-accent: var(--accent-ok); }
+  .kpi-card.card-ngrate { --card-accent: var(--accent-ng); }
+  .kpi-card.card-flavors { --card-accent: var(--accent-yellow); }
+
+  .kpi-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .kpi-value {
+    font-family: 'Space Mono', monospace;
+    font-size: 36px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--text);
+  }
+
+  .kpi-value.ok { color: var(--accent-ok); }
+  .kpi-value.ng { color: var(--accent-ng); }
+  .kpi-value.blue { color: var(--accent-blue); }
+  .kpi-value.yellow { color: var(--accent-yellow); }
+
+  .kpi-unit {
+    font-size: 16px;
+    color: var(--text-muted);
+  }
+
+  /* Progress bar for rates */
+  .kpi-bar {
+    margin-top: 10px;
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .kpi-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.8s ease;
+  }
+
+  .kpi-bar-fill.ok { background: var(--accent-ok); }
+  .kpi-bar-fill.ng { background: var(--accent-ng); }
+
+  /* Charts grid */
+  .charts-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .chart-full { grid-column: 1 / -1; }
+
+  @media (max-width: 900px) {
+    .charts-grid { grid-template-columns: 1fr; }
+    .chart-full { grid-column: 1; }
+  }
+
+  .chart-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px;
+    position: relative;
+  }
+
+  .chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 20px;
+  }
+
+  .chart-title {
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    color: var(--text-muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .chart-subtitle {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    margin-top: 2px;
+  }
+
+  .chart-legend {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+
+  .legend-dot {
+    width: 8px; height: 8px;
+    border-radius: 2px;
+  }
+
+  .chart-container {
+    position: relative;
+    height: 280px;
+  }
+
+  .chart-container.tall { height: 340px; }
+
+  /* Flavor table */
+  .flavor-table-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px;
+  }
+
+  .flavor-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 16px;
+  }
+
+  .flavor-table th {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .flavor-table td {
+    padding: 12px 12px;
+    font-size: 14px;
+    border-bottom: 1px solid rgba(42,42,58,0.5);
+  }
+
+  .flavor-table tr:last-child td { border-bottom: none; }
+
+  .flavor-table tr:hover td { background: var(--surface2); }
+
+  .flavor-name {
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .flavor-char {
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    color: var(--accent-yellow);
+    background: rgba(255,209,102,0.1);
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+
+  .inline-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .mini-bar {
+    flex: 1;
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .mini-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+  }
+
+  .mini-bar-fill.ok { background: var(--accent-ok); }
+  .mini-bar-fill.ng { background: var(--accent-ng); }
+
+  .rate-text { 
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    min-width: 50px;
+    text-align: right;
+  }
+
+  .rate-text.ok { color: var(--accent-ok); }
+  .rate-text.ng { color: var(--accent-ng); }
+
+  /* Empty / loading state */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 200px;
+    color: var(--text-muted);
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    gap: 8px;
+  }
+
+  .empty-icon { font-size: 32px; opacity: 0.3; }
+
+  /* Fade in animation */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .animate { animation: fadeUp 0.4s ease both; }
+
+  .kpi-card:nth-child(1) { animation-delay: 0.05s; }
+  .kpi-card:nth-child(2) { animation-delay: 0.10s; }
+  .kpi-card:nth-child(3) { animation-delay: 0.15s; }
+  .kpi-card:nth-child(4) { animation-delay: 0.20s; }
+  .kpi-card:nth-child(5) { animation-delay: 0.25s; }
+  .kpi-card:nth-child(6) { animation-delay: 0.30s; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <div class="header-tag">Quality Control · TLC</div>
+      <div class="header-title">DASH<span>BOARD</span></div>
+    </div>
+    <div class="header-right">
+      <div class="script-url-box">
+        <input 
+          type="text" 
+          class="url-input" 
+          id="scriptUrl" 
+          placeholder="วาง Apps Script URL ที่นี่..."
+          value=""
+        />
+        <button class="btn btn-primary" id="loadBtn" onclick="loadData()">LOAD</button>
+      </div>
+      <div class="last-update" id="lastUpdate">ยังไม่ได้โหลดข้อมูล</div>
+    </div>
+  </div>
+
+  <!-- Status bar -->
+  <div class="status-bar">
+    <div class="status-dot" id="statusDot"></div>
+    <span id="statusText">รอ URL ของ Apps Script</span>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="kpi-grid" id="kpiGrid">
+    <div class="kpi-card card-total animate">
+      <div class="kpi-label">Total Codes</div>
+      <div class="kpi-value blue" id="kpiTotal">—</div>
+    </div>
+    <div class="kpi-card card-flavors animate">
+      <div class="kpi-label">Flavors</div>
+      <div class="kpi-value yellow" id="kpiFlavors">—</div>
+    </div>
+    <div class="kpi-card card-ok animate">
+      <div class="kpi-label">OK</div>
+      <div class="kpi-value ok" id="kpiOK">—</div>
+    </div>
+    <div class="kpi-card card-ng animate">
+      <div class="kpi-label">NG</div>
+      <div class="kpi-value ng" id="kpiNG">—</div>
+    </div>
+    <div class="kpi-card card-okrate animate">
+      <div class="kpi-label">OK Rate</div>
+      <div class="kpi-value ok" id="kpiOKRate">—<span class="kpi-unit">%</span></div>
+      <div class="kpi-bar"><div class="kpi-bar-fill ok" id="kpiOKBar" style="width:0%"></div></div>
+    </div>
+    <div class="kpi-card card-ngrate animate">
+      <div class="kpi-label">NG Rate</div>
+      <div class="kpi-value ng" id="kpiNGRate">—<span class="kpi-unit">%</span></div>
+      <div class="kpi-bar"><div class="kpi-bar-fill ng" id="kpiNGBar" style="width:0%"></div></div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="charts-grid">
+
+    <!-- Chart 1: Bar by Flavor -->
+    <div class="chart-card animate">
+      <div class="chart-header">
+        <div>
+          <div class="chart-title">BY FLAVOR</div>
+          <div class="chart-subtitle">OK / NG per รสชาติ</div>
+        </div>
+        <div class="chart-legend">
+          <div class="legend-item"><div class="legend-dot" style="background:var(--accent-ok)"></div>OK</div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--accent-ng)"></div>NG</div>
+        </div>
+      </div>
+      <div class="chart-container">
+        <canvas id="flavorBarChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Chart 2: NG Rate Donut by Flavor -->
+    <div class="chart-card animate">
+      <div class="chart-header">
+        <div>
+          <div class="chart-title">NG RATE BY FLAVOR</div>
+          <div class="chart-subtitle">% NG แต่ละรสชาติ</div>
+        </div>
+      </div>
+      <div class="chart-container">
+        <canvas id="flavorNgChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Chart 3: Trend Line+Area (full width) -->
+    <div class="chart-card chart-full animate">
+      <div class="chart-header">
+        <div>
+          <div class="chart-title">TREND OVER TIME</div>
+          <div class="chart-subtitle">แนวโน้ม OK / NG ตามเวลา</div>
+        </div>
+        <div class="chart-legend">
+          <div class="legend-item"><div class="legend-dot" style="background:var(--accent-ok)"></div>OK</div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--accent-ng)"></div>NG</div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--accent-yellow)"></div>%NG Rate</div>
+        </div>
+      </div>
+      <div class="chart-container tall">
+        <canvas id="trendChart"></canvas>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Flavor Table -->
+  <div class="flavor-table-card animate">
+    <div class="chart-header">
+      <div>
+        <div class="chart-title">FLAVOR BREAKDOWN</div>
+        <div class="chart-subtitle">สรุปรายรสชาติ</div>
+      </div>
+    </div>
+    <div id="flavorTableContainer">
+      <div class="empty-state">
+        <div class="empty-icon">◎</div>
+        <div>โหลดข้อมูลเพื่อดูรายละเอียด</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// Chart.js defaults
+Chart.defaults.color = '#7a80a0';
+Chart.defaults.borderColor = '#dde1ea';
+Chart.defaults.font.family = "'Space Mono', monospace";
+Chart.defaults.font.size = 11;
+
+let charts = {};
+
+// Destroy existing chart
+function destroyChart(id) {
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+}
+
+// Load data from Apps Script
+async function loadData() {
+  const url = document.getElementById('scriptUrl').value.trim();
+  if (!url) {
+    setStatus('error', 'กรุณาใส่ Apps Script URL');
+    return;
+  }
+
+  setStatus('loading', 'กำลังโหลด...');
+  document.getElementById('loadBtn').disabled = true;
+
+  try {
+    const res = await fetch(`${url}?action=getDashboard`);
+    const data = await res.json();
+
+    if (data.error) throw new Error(data.error);
+
+    renderDashboard(data);
+    setStatus('ok', `โหลดสำเร็จ — ${data.summary.total.toLocaleString()} records`);
+    document.getElementById('lastUpdate').textContent = 
+      'อัปเดต: ' + new Date().toLocaleTimeString('th-TH');
+  } catch (err) {
+    setStatus('error', 'Error: ' + err.message);
+  } finally {
+    document.getElementById('loadBtn').disabled = false;
+  }
+}
+
+function setStatus(type, msg) {
+  const dot = document.getElementById('statusDot');
+  const txt = document.getElementById('statusText');
+  dot.className = 'status-dot ' + type;
+  txt.textContent = msg;
+}
+
+function renderDashboard(data) {
+  const { summary, flavorData, trendData } = data;
+
+  // KPI
+  document.getElementById('kpiTotal').textContent = summary.total.toLocaleString();
+  document.getElementById('kpiFlavors').textContent = summary.totalFlavors;
+  document.getElementById('kpiOK').textContent = summary.totalOK.toLocaleString();
+  document.getElementById('kpiNG').textContent = summary.totalNG.toLocaleString();
+  document.getElementById('kpiOKRate').innerHTML = summary.okRate + '<span class="kpi-unit">%</span>';
+  document.getElementById('kpiNGRate').innerHTML = summary.ngRate + '<span class="kpi-unit">%</span>';
+  document.getElementById('kpiOKBar').style.width = summary.okRate + '%';
+  document.getElementById('kpiNGBar').style.width = summary.ngRate + '%';
+
+  // Charts
+  renderFlavorBar(flavorData);
+  renderFlavorNgRate(flavorData);
+  renderTrend(trendData);
+  renderTable(flavorData);
+}
+
+function renderFlavorBar(flavorData) {
+  destroyChart('flavorBar');
+  const labels = flavorData.map(f => f.flavor);
+  const ctx = document.getElementById('flavorBarChart').getContext('2d');
+  charts.flavorBar = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'OK',
+          data: flavorData.map(f => f.ok),
+          backgroundColor: 'rgba(0,229,160,0.75)',
+          borderColor: '#00e5a0',
+          borderWidth: 1,
+          borderRadius: 4,
+        },
+        {
+          label: 'NG',
+          data: flavorData.map(f => f.ng),
+          backgroundColor: 'rgba(255,61,107,0.75)',
+          borderColor: '#ff3d6b',
+          borderWidth: 1,
+          borderRadius: 4,
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: '#eef0f4' }, ticks: { color: '#7a80a0' } },
+        y: { grid: { color: '#eef0f4' }, ticks: { color: '#7a80a0' } }
+      }
+    }
+  });
+}
+
+function renderFlavorNgRate(flavorData) {
+  destroyChart('flavorNg');
+  const COLORS = ['#ff3d6b','#ff7b5e','#ffd166','#4d9fff','#c084fc','#00e5a0'];
+  const labels = flavorData.map(f => `${f.flavor} (${f.ngRate}%)`);
+  const ctx = document.getElementById('flavorNgChart').getContext('2d');
+  charts.flavorNg = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{
+        data: flavorData.map(f => parseFloat(f.ngRate) || 0.001),
+        backgroundColor: flavorData.map((_, i) => COLORS[i % COLORS.length]),
+        borderColor: '#ffffff',
+        borderWidth: 3,
+        hoverOffset: 8,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      cutout: '65%',
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { color: '#7a80a0', padding: 12, font: { size: 10 } }
+        }
+      }
+    }
+  });
+}
+
+function renderTrend(trendData) {
+  destroyChart('trend');
+  const maxPoints = 60;
+  let data = trendData;
+  if (data.length > maxPoints) {
+    // sample evenly
+    const step = Math.ceil(data.length / maxPoints);
+    data = data.filter((_, i) => i % step === 0);
+  }
+
+  const labels = data.map(d => d.time.slice(5)); // MM-DD HH:00
+  const ctx = document.getElementById('trendChart').getContext('2d');
+
+  const gradOK = ctx.createLinearGradient(0, 0, 0, 300);
+  gradOK.addColorStop(0, 'rgba(0,169,122,0.25)');
+  gradOK.addColorStop(1, 'rgba(0,169,122,0)');
+
+  const gradNG = ctx.createLinearGradient(0, 0, 0, 300);
+  gradNG.addColorStop(0, 'rgba(232,32,74,0.25)');
+  gradNG.addColorStop(1, 'rgba(232,32,74,0)');
+
+  charts.trend = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'OK',
+          data: data.map(d => d.ok),
+          borderColor: '#00e5a0',
+          backgroundColor: gradOK,
+          fill: true,
+          tension: 0.4,
+          pointRadius: data.length > 20 ? 0 : 4,
+          borderWidth: 2,
+        },
+        {
+          label: 'NG',
+          data: data.map(d => d.ng),
+          borderColor: '#ff3d6b',
+          backgroundColor: gradNG,
+          fill: true,
+          tension: 0.4,
+          pointRadius: data.length > 20 ? 0 : 4,
+          borderWidth: 2,
+        },
+        {
+          label: '%NG Rate',
+          data: data.map(d => d.ngRate),
+          borderColor: '#ffd166',
+          backgroundColor: 'transparent',
+          fill: false,
+          tension: 0.4,
+          pointRadius: 0,
+          borderWidth: 2,
+          borderDash: [4, 4],
+          yAxisID: 'y2',
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: '#eef0f4' }, ticks: { color: '#7a80a0', maxRotation: 45 } },
+        y: { grid: { color: '#eef0f4' }, ticks: { color: '#7a80a0' }, title: { display: true, text: 'Count', color: '#7a80a0' } },
+        y2: {
+          position: 'right',
+          grid: { drawOnChartArea: false },
+          ticks: { color: '#ffd166', callback: v => v + '%' },
+          title: { display: true, text: '%NG', color: '#ffd166' }
+        }
+      }
+    }
+  });
+}
+
+function renderTable(flavorData) {
+  const container = document.getElementById('flavorTableContainer');
+  if (!flavorData.length) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon">◎</div><div>ไม่มีข้อมูล</div></div>';
+    return;
+  }
+
+  const rows = flavorData.map(f => {
+    const okPct = f.total > 0 ? (f.ok / f.total * 100).toFixed(0) : 0;
+    const ngPct = f.ngRate;
+    // extract char from flavor name: assume char is in Matrix data
+    return `
+      <tr>
+        <td><span class="flavor-name">${f.flavor}</span></td>
+        <td style="color:var(--accent-blue);font-family:'Space Mono',monospace">${f.total.toLocaleString()}</td>
+        <td style="color:var(--accent-ok);font-family:'Space Mono',monospace">${f.ok.toLocaleString()}</td>
+        <td style="color:var(--accent-ng);font-family:'Space Mono',monospace">${f.ng.toLocaleString()}</td>
+        <td>
+          <div class="inline-bar">
+            <div class="mini-bar"><div class="mini-bar-fill ok" style="width:${okPct}%"></div></div>
+            <span class="rate-text ok">${okPct}%</span>
+          </div>
+        </td>
+        <td>
+          <div class="inline-bar">
+            <div class="mini-bar"><div class="mini-bar-fill ng" style="width:${Math.min(ngPct,100)}%"></div></div>
+            <span class="rate-text ng">${ngPct}%</span>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  container.innerHTML = `
+    <table class="flavor-table">
+      <thead>
+        <tr>
+          <th>Flavor</th>
+          <th>Total</th>
+          <th>OK</th>
+          <th>NG</th>
+          <th>OK Rate</th>
+          <th>NG Rate</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+// Allow Enter key on URL input
+document.getElementById('scriptUrl').addEventListener('keydown', e => {
+  if (e.key === 'Enter') loadData();
+});
+
+// Auto-load on page open
+window.addEventListener('load', () => {
+  document.getElementById('scriptUrl').value = 'https://script.google.com/macros/s/AKfycbxrqNBcL_8AMlfOgrmWP75fK0zUDP7ntz8ahcyMzc06ZdajlG2-J-k6_yasSEqk6fN6XQ/exec';
+  loadData();
+});
+</script>
+</body>
+</html>
